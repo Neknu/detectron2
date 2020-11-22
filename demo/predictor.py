@@ -11,22 +11,27 @@ from detectron2.engine.defaults import DefaultPredictor
 from detectron2.utils.video_visualizer import VideoVisualizer
 from detectron2.utils.visualizer import ColorMode, Visualizer
 
-effect_image = cv2.imread("/content/starsBig.jpg")
+sky = cv2.imread("/content/sky.jpg")
+graffiti = cv2.imread("/content/graffiti.jpg")
+ocean = cv2.VideoCapture("/content/ocean.mp4")
 
 import numpy as np
 from PIL import Image
 
 
 def add_channel(image):
-    b_channel, g_channel, r_channel = cv2.split(image)
+    try:
+        b_channel, g_channel, r_channel = cv2.split(image)
+    except:
+        return image
 
     alpha_channel = np.ones(b_channel.shape, dtype=b_channel.dtype) * 255  # creating a dummy alpha channel image.
 
     return cv2.merge((b_channel, g_channel, r_channel, alpha_channel))
 
 
-def mask(segmentation, segments_info, target_image, effect_image, id):
-    category_id = next(filter(lambda x: x['category_id'] == id, segments_info))['id']
+def mask(segmentation, segments_info, target_image, effect_image, category_id, opacity):
+    category_id = next(filter(lambda x: x['category_id'] == category_id, segments_info))['id']
     effect_h, effect_w, _ = effect_image.shape
     print(effect_w, effect_h)
     target_h, target_w, _ = target_image.shape
@@ -39,9 +44,8 @@ def mask(segmentation, segments_info, target_image, effect_image, id):
     ])
     crop_effect[~target_prediction, :] = [0, 0, 0, 0]
     target_image = add_channel(target_image)
-    dst = cv2.addWeighted(crop_effect, 0.5, target_image, 1, 0)
-    img = cv2.cvtColor(dst, cv2.COLOR_BGRA2BGR)
-    return np.array(img)
+    dst = cv2.addWeighted(crop_effect, opacity, target_image, 1, 0)
+    return dst
 
 
 class VisualizationDemo(object):
@@ -127,7 +131,13 @@ class VisualizationDemo(object):
                 #     frame, panoptic_seg.to(self.cpu_device), segments_info
                 # )
                 panoptic_seg, segments_info = predictions["panoptic_seg"]
-                return mask(panoptic_seg, segments_info, frame, effect_image, 21)
+                success, ocean_frame = ocean.read()
+                res = mask(panoptic_seg, segments_info, frame, ocean_frame, 21, 0.8)
+                res = mask(panoptic_seg, segments_info, res, sky, 40, 0.8)
+                res = mask(panoptic_seg, segments_info, res, graffiti, 50, 0.5)
+                img = cv2.cvtColor(res, cv2.COLOR_BGRA2BGR)
+                return np.array(img)
+
             elif "instances" in predictions:
                 predictions = predictions["instances"].to(self.cpu_device)
                 vis_frame = video_visualizer.draw_instance_predictions(frame, predictions)
